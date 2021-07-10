@@ -256,6 +256,13 @@ defmodule Assent.Strategy.OIDCTest do
 
       assert OIDC.validate_id_token(config, id_token) == {:error, "Invalid audience \"invalid\" in ID Token"}
     end
+    
+    test "with valid `aud` list in id_token", %{config: config} do
+      id_token = gen_id_token(alg: "HS256", claims: %{"aud" => [config[:client_id]]})
+
+      assert {:ok, jwt} = OIDC.validate_id_token(config, id_token)
+      assert jwt.verified?
+    end
 
     test "with invalid signature in id_token", %{config: config, id_token: id_token} do
       [header, payload, _signature] = String.split(id_token, ".")

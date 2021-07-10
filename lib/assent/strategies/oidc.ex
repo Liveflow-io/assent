@@ -334,6 +334,9 @@ defmodule Assent.Strategy.OIDC do
   defp validate_issuer_identifer(%{claims: %{"iss" => iss}}, _iss), do: {:error, "Invalid issuer \"#{iss}\" in ID Token"}
 
   defp validate_audience(%{claims: %{"aud" => aud}}, aud), do: :ok
+  defp validate_audience(%{claims: %{"aud" => aud}}, client_id) when is_list(aud) do
+    if client_id in aud, do: :ok, else: {:error, "No matching audience \"#{aud}\" in ID Token"}
+  end
   defp validate_audience(%{claims: %{"aud" => aud}}, _client_id), do: {:error, "Invalid audience \"#{aud}\" in ID Token"}
 
   defp validate_alg(%{header: %{"alg" => alg}}, alg), do: :ok
