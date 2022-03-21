@@ -192,15 +192,24 @@ defmodule Assent.Strategy.OIDC do
   @impl true
   @spec callback(Config.t(), map(), atom()) :: {:ok, %{user: map(), token: map()}} | {:error, term()}
   def callback(config, params, strategy \\ __MODULE__) do
+    with {:ok, config} <- prepare_token_config(config) do
+      OAuth2.callback(config, params, strategy)
+    end
+  end
+
+  def prepare_token_config(config) do
+    config = config |> Config.put(:site, "")
+    
     with {:ok, openid_config} <- openid_configuration(config),
          {:ok, method}        <- fetch_client_authentication_method(openid_config, config),
          {:ok, token_url}     <- fetch_from_openid_config(openid_config, "token_endpoint") do
+      config =
+        config
+        |> Config.put(:openid_configuration, openid_config)
+        |> Config.put(:auth_method, method)
+        |> Config.put(:token_url, token_url)
 
-      config
-      |> Config.put(:openid_configuration, openid_config)
-      |> Config.put(:auth_method, method)
-      |> Config.put(:token_url, token_url)
-      |> OAuth2.callback(params, strategy)
+      {:ok, config}
     end
   end
 
