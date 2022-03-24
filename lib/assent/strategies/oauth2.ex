@@ -163,7 +163,7 @@ defmodule Assent.Strategy.OAuth2 do
   end
   defp maybe_check_state(_session_params, _params), do: :ok
 
-  defp authentication_params(nil, config) do
+  def authentication_params(nil, config) do
     with {:ok, client_id} <- Config.fetch(config, :client_id) do
 
       headers = []
@@ -172,7 +172,7 @@ defmodule Assent.Strategy.OAuth2 do
       {:ok, headers, body}
     end
   end
-  defp authentication_params(:client_secret_basic, config) do
+  def authentication_params(:client_secret_basic, config) do
     with {:ok, client_id}     <- Config.fetch(config, :client_id),
          {:ok, client_secret} <- Config.fetch(config, :client_secret) do
 
@@ -183,7 +183,7 @@ defmodule Assent.Strategy.OAuth2 do
       {:ok, headers, body}
     end
   end
-  defp authentication_params(:client_secret_post, config) do
+  def authentication_params(:client_secret_post, config) do
     with {:ok, client_id}     <- Config.fetch(config, :client_id),
          {:ok, client_secret} <- Config.fetch(config, :client_secret) do
 
@@ -193,14 +193,14 @@ defmodule Assent.Strategy.OAuth2 do
       {:ok, headers, body}
     end
   end
-  defp authentication_params(:client_secret_jwt, config) do
+  def authentication_params(:client_secret_jwt, config) do
     alg = Config.get(config, :jwt_algorithm, "HS256")
 
     with {:ok, client_secret} <- Config.fetch(config, :client_secret) do
       jwt_authentication_params(alg, client_secret, config)
     end
   end
-  defp authentication_params(:private_key_jwt, config) do
+  def authentication_params(:private_key_jwt, config) do
     alg = Config.get(config, :jwt_algorithm, "RS256")
 
     with {:ok, pem}             <- JWTAdapter.load_private_key(config),
@@ -208,7 +208,7 @@ defmodule Assent.Strategy.OAuth2 do
       jwt_authentication_params(alg, pem, config)
     end
   end
-  defp authentication_params(method, _config) do
+  def authentication_params(method, _config) do
     {:error, "Invalid `:auth_method` #{method}"}
   end
 
