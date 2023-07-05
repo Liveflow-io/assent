@@ -25,6 +25,7 @@ defmodule Assent.Strategy.OIDC do
       Token will be considered valid, optional, defaults to nil
     - `:nonce` - The nonce to use for authorization request, optional, MUST be
       session based and unguessable
+    - `:trusted_audiences` - A list of audiences that are trusted, optional.
 
   See `Assent.Strategy.OAuth2` for more configuration options.
 
@@ -112,15 +113,16 @@ defmodule Assent.Strategy.OIDC do
       :get
       |> Helpers.request(url, nil, [], config)
       |> Helpers.decode_response(config)
-      |> case do
-        {:ok, %HTTPResponse{status: 200, body: configuration}} ->
-          {:ok, configuration}
-
-        {:error, response} ->
-          {:error, RequestError.invalid(response)}
-      end
+      |> process_openid_configuration_response()
     end
   end
+
+  defp process_openid_configuration_response({:ok, %HTTPResponse{status: 200, body: configuration}}), do: {:ok, configuration}
+  defp process_openid_configuration_response(any), do: process_response(any)
+
+  defp process_response({:ok, %HTTPResponse{} = response}), do: {:error, RequestError.unexpected(response)}
+  defp process_response({:error, %HTTPResponse{} = response}), do: {:error, RequestError.invalid(response)}
+  defp process_response({:error, error}), do: {:error, error}
 
   defp fetch_from_openid_config(config, key) do
     case Map.fetch(config, key) do
@@ -181,9 +183,6 @@ defmodule Assent.Strategy.OIDC do
   private key, the appropriate public key will be fetched from the `jwks_uri`
   setting in the OpenID configuration to verify the ID Token.
 
-  The userinfo will be fetched from the `userinfo_endpoint` if it exists in the
-  OpenID Configuration, otherwise the claims in the ID Token is used.
-
   The ID Token will be validated per
   [OpenID Connect Core 1.0 rules](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation).
 
@@ -199,7 +198,7 @@ defmodule Assent.Strategy.OIDC do
 
   def prepare_token_config(config) do
     config = config |> Config.put(:site, "")
-    
+
     with {:ok, openid_config} <- openid_configuration(config),
          {:ok, method}        <- fetch_client_authentication_method(openid_config, config),
          {:ok, token_url}     <- fetch_from_openid_config(openid_config, "token_endpoint") do
@@ -215,9 +214,11 @@ defmodule Assent.Strategy.OIDC do
 
   defp fetch_client_authentication_method(openid_config, config) do
     method  = Config.get(config, :client_authentication_method, "client_secret_basic")
-    methods = Map.get(openid_config, "token_endpoint_auth_methods_supported", ["client_secret_basic"])
+    methods = Map.get(openid_config, "token_endpoint_auth_methods_supported")
 
-    case method in methods do
+    supported_method? = if is_nil(methods), do: true, else: method in methods
+
+    case supported_method? do
       true  -> to_client_auth_method(method)
       false -> {:error, "Unsupported client authentication method: #{method}"}
     end
@@ -229,8 +230,17 @@ defmodule Assent.Strategy.OIDC do
   defp to_client_auth_method("private_key_jwt"), do: {:ok, :private_key_jwt}
   defp to_client_auth_method(method), do: {:error, "Invalid client authentication method: #{method}"}
 
+  # https://openid.net/specs/draft-jones-json-web-token-07.html#ReservedClaimName
+  @reserved_jwt_names ~w(exp nbf iat iss aud prn jti typ)
+
+  # https://openid.net/specs/openid-connect-core-1_0.html#IDToken
+  @id_token_names ~w(iss sub aud exp iat auth_time nonce acr amr azp at_hash c_hash sub_jwk)
+
+  # All ID Token claim names to be excluded from the user params
+  @id_token_names_to_exclude Enum.uniq(@reserved_jwt_names ++ @id_token_names -- ~w(sub))
+
   @doc """
-  Fetches user params and normalizes response.
+  Fetches user params from ID token.
 
   The ID Token is validated, and the claims is returned as the user params.
   Use `fetch_userinfo/2` to fetch the claims from the `userinfo` endpoint.
@@ -239,7 +249,7 @@ defmodule Assent.Strategy.OIDC do
   def fetch_user(config, token) do
     with {:ok, id_token} <- fetch_id_token(token),
          {:ok, jwt}      <- validate_id_token(config, id_token) do
-      Helpers.normalize_userinfo(jwt.claims)
+      {:ok, Map.drop(jwt.claims, @id_token_names_to_exclude)}
     end
   end
 
@@ -268,8 +278,9 @@ defmodule Assent.Strategy.OIDC do
          {:ok, issuer}        <- fetch_from_openid_config(openid_config, "issuer"),
          {:ok, jwt}           <- verify_jwt(id_token, openid_config, config),
          :ok                  <- validate_required_fields(jwt),
-         :ok                  <- validate_issuer_identifer(jwt, issuer),
-         :ok                  <- validate_audience(jwt, client_id),
+         :ok                  <- validate_issuer_identifier(jwt, issuer),
+         :ok                  <- validate_audience(jwt, client_id, config),
+         :ok                  <- validate_authorization_party(jwt, client_id, config),
          :ok                  <- validate_alg(jwt, expected_alg),
          :ok                  <- validate_verified(jwt),
          :ok                  <- validate_expiration(jwt),
@@ -311,17 +322,12 @@ defmodule Assent.Strategy.OIDC do
     :get
     |> Helpers.request(uri, nil, [], config)
     |> Helpers.decode_response(config)
-    |> case do
-      {:ok, %HTTPResponse{status: 200, body: %{"keys" => keys}}} ->
-        {:ok, keys}
-
-      {:ok, _any} ->
-        {:ok, []}
-
-      {:error, response} ->
-        {:error, RequestError.invalid(response)}
-    end
+    |> process_public_keys_response()
   end
+
+  defp process_public_keys_response({:ok, %HTTPResponse{status: 200, body: %{"keys" => keys}}}), do: {:ok, keys}
+  defp process_public_keys_response({:ok, %HTTPResponse{status: 200}}), do: {:ok, []}
+  defp process_public_keys_response(any), do: process_response(any)
 
   defp find_key(%{"kid" => kid}, [%{"kid" => kid} = key | _keys]), do: {:ok, key}
   defp find_key(%{"kid" => _kid} = header, [%{"kid" => _other} | keys]), do: find_key(header, keys)
@@ -339,14 +345,30 @@ defmodule Assent.Strategy.OIDC do
     end)
   end
 
-  defp validate_issuer_identifer(%{claims: %{"iss" => iss}}, iss), do: :ok
-  defp validate_issuer_identifer(%{claims: %{"iss" => iss}}, _iss), do: {:error, "Invalid issuer \"#{iss}\" in ID Token"}
+  defp validate_issuer_identifier(%{claims: %{"iss" => iss}}, iss), do: :ok
+  defp validate_issuer_identifier(%{claims: %{"iss" => iss}}, _iss), do: {:error, "Invalid issuer \"#{iss}\" in ID Token"}
 
-  defp validate_audience(%{claims: %{"aud" => aud}}, aud), do: :ok
-  defp validate_audience(%{claims: %{"aud" => aud}}, client_id) when is_list(aud) do
-    if client_id in aud, do: :ok, else: {:error, "No matching audience \"#{aud}\" in ID Token"}
+  defp validate_audience(%{claims: %{"aud" => aud} = claims} = jwt, client_id, config) when is_binary(aud) do
+    validate_audience(%{jwt | claims: %{claims | "aud" => [aud]}}, client_id, config)
   end
-  defp validate_audience(%{claims: %{"aud" => aud}}, _client_id), do: {:error, "Invalid audience \"#{aud}\" in ID Token"}
+  defp validate_audience(%{claims: %{"aud" => [client_id]}}, client_id, _config), do: :ok
+  defp validate_audience(%{claims: %{"aud" => auds}}, client_id, config) do
+    trusted_audiences = Config.get(config, :trusted_audiences, []) ++ [client_id]
+    missing_client_id? = client_id not in auds
+    untrusted_auds = Enum.filter(auds, & &1 not in trusted_audiences)
+
+    case {missing_client_id?, untrusted_auds} do
+      {false, []} -> :ok
+      {true, _} -> {:error, "`:client_id` not in audience #{inspect auds} in ID Token"}
+      {false, untrusted_auds} -> {:error, "Untrusted audience(s) #{inspect untrusted_auds} in ID Token"}
+    end
+  end
+
+  defp validate_authorization_party(%{claims: %{"azp" => client_id}}, client_id, _config), do: :ok
+  defp validate_authorization_party(%{claims: %{"azp" => azp}}, _client_id, _config) do
+    {:error, "Invalid authorized party \"#{azp}\" in ID Token"}
+  end
+  defp validate_authorization_party(_jwt, _client_id, _config), do: :ok
 
   defp validate_alg(%{header: %{"alg" => alg}}, alg), do: :ok
   defp validate_alg(%{header: %{"alg" => alg}}, expected_alg), do: {:error, "Expected `alg` in ID Token to be \"#{expected_alg}\", got \"#{alg}\""}
@@ -437,10 +459,6 @@ defmodule Assent.Strategy.OIDC do
       {:ok, jwt.claims}
     end
   end
-
-  defp process_response({:ok, %HTTPResponse{} = response}), do: {:error, RequestError.unexpected(response)}
-  defp process_response({:error, %HTTPResponse{} = response}), do: {:error, RequestError.invalid(response)}
-  defp process_response({:error, error}), do: {:error, error}
 
   defp validate_userinfo_sub(config, id_token, claims) when is_binary(id_token) do
     with {:ok, jwt} <- validate_id_token(config, id_token) do

@@ -2,13 +2,13 @@ defmodule Assent.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/pow-auth/assent"
-  @version "0.1.26-patched"
+  @version "0.2.3-patched"
 
   def project do
     [
       app: :assent,
       version: @version,
-      elixir: "~> 1.7",
+      elixir: "~> 1.12",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -39,17 +39,13 @@ defmodule Assent.MixProject do
       {:ssl_verify_fun, ">= 0.0.0", optional: true},
 
       {:mint, "~> 1.0", optional: true},
-      {:castore, "~> 0.1.0", optional: true},
-
-      {:credo, "~> 1.1", only: [:dev, :test]},
-      {:jason, "~> 1.0", only: [:dev, :test]},
 
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
 
-      {:cowboy, "~> 2.8", only: :test, override: true},
-      {:cowlib, "~> 2.9", only: :test, override: true},
-      {:ranch, "~> 1.7", only: :test, override: true},
-      {:bypass, "~> 2.1", only: :test}
+      {:credo, "~> 1.1", only: [:dev, :test]},
+      {:jason, "~> 1.0", only: [:dev, :test]},
+      {:test_server, "~> 0.1.0", only: :test},
+      {:bandit, ">= 0.0.0", only: :test}
     ]
   end
 
@@ -58,9 +54,12 @@ defmodule Assent.MixProject do
 
   defp package do
     [
-      maintainers: ["Dan Shultzer"],
+      maintainers: ["Dan Schultzer"],
       licenses: ["MIT"],
-      links: %{gitHub: @source_url},
+      links: %{
+        "GitHub" => @source_url,
+        "Sponsor" => "https://github.com/sponsors/danschultzer"
+      },
       files: ~w(lib LICENSE mix.exs README.md)
     ]
   end

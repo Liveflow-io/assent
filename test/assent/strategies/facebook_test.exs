@@ -25,12 +25,12 @@ defmodule Assent.Strategy.FacebookTest do
   end
 
   describe "callback/2" do
-    test "normalizes data", %{config: config, callback_params: params, bypass: bypass} do
-      expect_oauth2_access_token_request(bypass, [uri: "/oauth/access_token"], fn _conn, params ->
+    test "normalizes data", %{config: config, callback_params: params} do
+      expect_oauth2_access_token_request([uri: "/oauth/access_token"], fn _conn, params ->
         assert params["client_secret"] == config[:client_secret]
       end)
 
-      expect_oauth2_user_request(bypass, @user_response, [uri: "/me"], fn conn ->
+      expect_oauth2_user_request(@user_response, [uri: "/me"], fn conn ->
         conn = Plug.Conn.fetch_query_params(conn)
 
         assert conn.params["access_token"] == "access_token"
@@ -39,11 +39,11 @@ defmodule Assent.Strategy.FacebookTest do
       end)
 
       assert {:ok, %{user: user}} = Facebook.callback(config, params)
-      assert user == Map.put(@user, "picture", "http://localhost:#{bypass.port}/1000001/picture")
+      assert user == Map.put(@user, "picture", TestServer.url("/1000001/picture"))
     end
 
-    test "handles error", %{config: config, callback_params: params, bypass: bypass} do
-      Bypass.down(bypass)
+    test "handles error", %{config: config, callback_params: params} do
+      TestServer.stop()
 
       assert {:error, %Assent.RequestError{error: :unreachable}} = Facebook.callback(config, params)
     end

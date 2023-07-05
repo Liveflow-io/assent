@@ -9,24 +9,27 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # This ensures we run the test for only the PR or the push
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
-        include:
-          - elixir: 1.12
-            otp: 24.0
-            deploy: true
-          - elixir: 1.11
-            otp: 22.3
-          - elixir: 1.7
-            otp: 22.1
-    name: OTP ${{matrix.otp}} / Elixir ${{matrix.elixir}}
+        version:
+          - otp: 26.0
+            elixir: 1.15.0
+            os: ubuntu-latest
+          - otp: 22.0
+            elixir: 1.12.0
+            # It's necessary to run on ubuntu 20.04 for OTP 20 - 23
+            # See https://github.com/erlef/setup-beam
+            os: ubuntu-20.04
+    runs-on: ${{ matrix.version.os }}
+    name: OTP ${{matrix.version.otp}} / Elixir ${{matrix.version.elixir}}
     steps:
-      - uses: actions/checkout@v2
-      - uses: erlef/setup-elixir@v1
+      - uses: actions/checkout@v3
+      - uses: erlef/setup-beam@v1
         with:
-          otp-version: ${{matrix.otp}}
-          elixir-version: ${{matrix.elixir}}
+          otp-version: ${{matrix.version.otp}}
+          elixir-version: ${{matrix.version.elixir}}
       - run: mix deps.get
       - run: mix test
       - run: MIX_ENV=test mix credo
@@ -38,10 +41,10 @@ jobs:
     env:
       HEX_API_KEY: ${{secrets.HEX_API_KEY}}
     steps:
-      - uses: actions/checkout@v2
-      - uses: erlef/setup-elixir@v1
+      - uses: actions/checkout@v3
+      - uses: erlef/setup-beam@v1
         with:
-          otp-version: 24.0
-          elixir-version: 1.12
+          otp-version: 25.0
+          elixir-version: 1.14
       - run: mix deps.get
       - run: mix hex.publish --yes

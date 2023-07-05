@@ -4,6 +4,8 @@ defmodule Assent.Config do
   """
 
   defmodule MissingKeyError do
+    @type t :: %__MODULE__{}
+
     defexception [:message]
   end
 
@@ -12,7 +14,7 @@ defmodule Assent.Config do
   @doc """
   Fetches the key value from the configuration.
   """
-  @spec fetch(t(), atom()) :: {:ok, any()} | {:error, %MissingKeyError{}}
+  @spec fetch(t(), atom()) :: {:ok, any()} | {:error, MissingKeyError.t()}
   def fetch(config, key) do
     case Keyword.fetch(config, key) do
       {:ok, value} -> {:ok, value}
@@ -30,14 +32,16 @@ defmodule Assent.Config do
   Fetches the JSON library in config.
 
   If not found in provided config, this will attempt to load the JSON library
-  from global application environment for `:assent` or `:phoenix`. Defaults to
-  `Poison`.
+  from global application environment for `:assent`. Defaults to `Jason`.
   """
   @spec json_library(t()) :: module()
   def json_library(config) do
-    config
-    |> get(:json_library, nil)
-    |> Kernel.||(Application.get_env(:assent, :json_library))
-    |> Kernel.||(Application.get_env(:phoenix, :json_library, Poison))
+    case get(config, :json_library, nil) do
+      nil ->
+        Application.get_env(:assent, :json_library, Jason)
+
+      json_library ->
+        json_library
+    end
   end
 end

@@ -52,7 +52,7 @@ defmodule Assent.Strategy.OAuth2 do
         user_url: "https://example.com/api/user"
       ]
 
-      {:ok, {url: url, session_params: session_params}} =
+      {:ok, %{url: url, session_params: session_params}} =
         config
         |> Assent.Config.put(:redirect_uri, "http://localhost:4000/auth/callback")
         |> Assent.Strategy.OAuth2.authorize_url()
@@ -108,8 +108,7 @@ defmodule Assent.Strategy.OAuth2 do
     24
     |> :crypto.strong_rand_bytes()
     |> :erlang.bitstring_to_list()
-    |> Enum.map(fn x -> :erlang.integer_to_binary(x, 16) end)
-    |> Enum.join()
+    |> Enum.map_join(fn x -> :erlang.integer_to_binary(x, 16) end)
     |> String.downcase()
   end
 
@@ -261,7 +260,7 @@ defmodule Assent.Strategy.OAuth2 do
     end
   end
 
-  defp process_access_token_response({:ok, %HTTPResponse{status: 200, body: %{"access_token" => _} = token}}), do: {:ok, token}
+  defp process_access_token_response({:ok, %HTTPResponse{status: status, body: %{"access_token" => _} = token}}) when status in [200, 201], do: {:ok, token}
   defp process_access_token_response(any), do: process_response(any)
 
   defp process_response({:ok, %HTTPResponse{} = response}), do: {:error, RequestError.unexpected(response)}

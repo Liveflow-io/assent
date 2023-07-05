@@ -20,7 +20,7 @@ defmodule Assent.Strategy.OIDC.Base do
   alias Assent.Strategy.OIDC
 
   @callback default_config(Keyword.t()) :: Keyword.t()
-  @callback normalize(Keyword.t(), map()) :: {:ok, map()} | {:error, term()}
+  @callback normalize(Keyword.t(), map()) :: {:ok, map()} | {:ok, map(), map()} | {:error, term()}
   @callback fetch_user(Keyword.t(), map()) :: {:ok, map()} | {:error, term()}
 
   @doc false
@@ -39,6 +39,9 @@ defmodule Assent.Strategy.OIDC.Base do
 
       @impl unquote(__MODULE__)
       def fetch_user(config, token), do: OIDC.fetch_user(config, token)
+
+      @impl unquote(__MODULE__)
+      def normalize(_config, user), do: {:ok, user, user}
 
       defoverridable unquote(__MODULE__)
       defoverridable Assent.Strategy
